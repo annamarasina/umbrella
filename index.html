@@ -3,146 +3,228 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f7ef">
+  <meta name="theme-color" content="#f3f2f2">
   <title>Umbrella · Your event rain plan</title>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-<header class="top">
-  <div class="wrap nav">
-    <a href="/" class="wordmark"><span class="mark" aria-hidden="true"><span class="umbrella-icon"></span></span>Umbrella</a>
-    <a class="nav-link" href="/" id="organizerNav" hidden>← Back to event plan</a>
+<div class="app-shell">
+  <div class="sky" aria-hidden="true">
+    <div class="sun-glow" id="sunSky"></div>
+    <div id="rainSky" hidden></div>
   </div>
-</header>
-
-<main class="wrap">
-  <header class="event-header">
-    <p class="event-location" id="eyebrow"><span class="location-dot" aria-hidden="true"></span>Austin, Texas</p>
-    <h1 id="heading">UBC Pickleball Cup</h1>
-    <p id="subtitle">Loading event schedule…</p>
-    <p class="event-source" id="eventSource"><span id="eventSchedule">Open play at 6 PM · Cup starts at 7 PM</span> <a id="eventLink" href="https://luma.com/jcvyakxc" target="_blank" rel="noopener">Luma event <span aria-hidden="true">↗</span></a></p>
+  <header class="nav">
+    <span class="nav-brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12a10.06 10.06 0 0 0-20 0Z M12 12v8a2 2 0 0 0 4 0 M12 2v1"/></svg>
+      Umbrella
+    </span>
+    <a href="/" id="planNav" aria-current="page">Event plan</a>
+    <a href="/?view=venue" id="staffNav">Venue staff</a>
+    <a href="/?view=escrow" id="escrowNav" class="tag tag-outline">Arc Testnet proof ↗</a>
   </header>
 
-  <div class="dashboard">
-    <section class="weather" id="forecastCard" aria-labelledby="weatherHeading">
-      <div class="weather-heading">
-        <h2 id="weatherHeading">Rain outlook</h2>
-        <svg viewBox="0 0 32 32" fill="none" class="weather-icon" aria-hidden="true">
-          <path d="M8 19a4.5 4.5 0 0 1-.5-9 6.5 6.5 0 0 1 12.3-1.1A5.2 5.2 0 0 1 23 19H8zm3 4-1.5 3m6.5-3-1.5 3m6.5-3-1.5 3"/>
-        </svg>
+  <main class="page">
+    <div class="event-hero">
+      <div>
+        <div class="card-kicker" id="eyebrow">Austin, Texas</div>
+        <h1 id="heading">UBC Pickleball Cup</h1>
+        <p id="subtitle">Open play at 6 PM · Cup starts at 7 PM · Whitaker Courts, UT Austin · <a href="https://luma.com/jcvyakxc" target="_blank" rel="noopener">Luma event</a></p>
       </div>
-      <div class="rain-reading">
-        <p class="rain-number" id="rainValue">—</p>
-        <p class="rain-label">Highest hourly rain chance during your event</p>
+      <div class="switch-point">
+        <div>Switch point</div>
+        <strong id="threshold">70%</strong>
       </div>
-      <div class="weather-focus" aria-live="polite">
-        <span class="weather-status" id="rainDecision">Waiting for the live forecast</span>
-        <p class="forecast-meta" id="forecastSource">National Weather Service</p>
-      </div>
-      <div class="weather-actions">
-        <button type="button" class="refresh-button" id="forecast" disabled>
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M15.8 7a6.4 6.4 0 1 0 .1 5.8M16 3.8v3.7h-3.7"/></svg>
-          <span id="forecastButtonLabel">Check live forecast</span>
-        </button>
-        <details class="hourly">
-          <summary>Event hours</summary>
-          <ul id="hourlyValues" class="hourly-values" aria-label="Hourly rain chance"></ul>
-        </details>
-      </div>
-    </section>
+    </div>
 
-    <section class="plan" id="plan" aria-labelledby="planHeading">
-      <div class="plan-heading">
+    <ol class="booking-steps" aria-label="Booking progress">
+      <li aria-current="step"><span class="step-number">01</span><strong>Watching</strong><span>NWS hourly forecast</span></li>
+      <li><span class="step-number">02</span><strong>Hold paid</strong><span id="holdStep">150 USDC from escrow</span></li>
+      <li><span class="step-number">03</span><strong>Room held</strong><span id="roomStep">Signed event verified</span></li>
+      <li><span class="step-number">04</span><strong id="decisionStep">Your decision</strong><span id="decisionNote">Move or stay</span></li>
+    </ol>
+
+    <div class="plan-columns" id="planColumns">
+      <section class="panel" aria-labelledby="weatherHeading">
+        <div class="section-toolbar">
+          <h2 class="weather-heading" id="weatherHeading">
+            Rain outlook
+            <svg class="weather-icon sun-icon" id="sunIcon" width="68" height="68" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true"><circle cx="24" cy="24" r="8"/><g id="sunRays"></g></svg>
+            <svg class="weather-icon rain-icon" id="rainIcon" width="68" height="68" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+              <path class="cloud" d="M33 30H17a11 11 0 1 1 10.5-14.2H31a7.1 7.1 0 1 1 2 14.2Z"/>
+              <g class="weather-drops"><path d="M15 35l-1.6 4"/><path d="M21 35l-1.6 4"/><path d="M27 35l-1.6 4"/><path d="M33 35l-1.6 4"/></g>
+            </svg>
+          </h2>
+          <div class="seg" id="forecastModes" role="group" aria-label="Forecast source">
+            <label class="seg-opt"><input type="radio" name="forecastMode" id="liveMode" checked>Live forecast</label>
+            <label class="seg-opt"><input type="radio" name="forecastMode" id="rainMode" disabled>Rain scenario</label>
+          </div>
+        </div>
+        <div class="rain-reading" aria-live="polite">
+          <div class="rain-value" id="rainValue">—</div>
+          <div class="rain-explainer">
+            <span class="tag tag-neutral" id="rainDecision">Waiting for the live forecast</span>
+            <p class="muted">Highest hourly rain chance during your event</p>
+          </div>
+        </div>
+        <div class="rain-chart" id="rainChart">
+          <div class="chart-threshold"><span id="chartThreshold">Switch point 70%</span></div>
+          <div class="chart-bars" id="chartBars" aria-hidden="true"></div>
+        </div>
+        <div class="chart-hours muted" id="chartHours" aria-label="Rain chance by event hour"></div>
+        <div class="section-toolbar forecast-footer">
+          <span class="muted" id="forecastSource">National Weather Service · hourly forecast</span>
+          <button type="button" class="btn btn-secondary" id="forecast" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-9 9.75 9.75 0 0 1-6.74-2.74L3 16 M8 16H3v5"/></svg>
+            <span id="forecastButtonLabel">Check live forecast</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="planHeading">
         <div>
-          <h2 id="planHeading">Your venue plan</h2>
-          <p id="planIntro">Reaching the switch point can reserve the backup. You decide whether to move.</p>
+          <h2 class="section-heading" id="planHeading">Your venue plan</h2>
+          <p class="section-note muted" id="planIntro">Reaching the switch point can reserve the backup. You decide whether to move.</p>
         </div>
-        <div class="switch-point" id="switchPoint">
-          <span>Switch point</span><strong id="threshold">70%</strong>
-        </div>
-      </div>
-
-      <div class="venue-pair">
-        <article class="venue-card" id="outdoorCard">
-          <div class="venue-photo outdoor-photo" aria-hidden="true"></div>
-          <div class="venue-copy">
-            <p class="venue-role" id="outdoorRole">Current venue</p>
+        <div class="venue-pair">
+          <article class="venue-card" id="outdoorCard" data-current="true">
+            <div class="plate outdoor-photo" aria-hidden="true"></div>
+            <div class="card-kicker" id="outdoorRole">Current venue</div>
             <h3 id="outdoorName">Whitaker Courts</h3>
-            <p id="outdoorDetail">Outdoor · UT Austin</p>
-          </div>
-        </article>
-        <article class="venue-card" id="indoorCard">
-          <div class="venue-photo indoor-photo" aria-hidden="true"></div>
-          <div class="venue-copy">
-            <p class="venue-role" id="indoorRole">Backup venue</p>
+            <div class="muted" id="outdoorDetail">Outdoor · UT Austin</div>
+          </article>
+          <article class="venue-card" id="indoorCard">
+            <div class="plate indoor-photo" aria-hidden="true"></div>
+            <div class="card-kicker" id="indoorRole">Indoor backup</div>
             <h3 id="indoorName">Austin Pickle Ranch</h3>
-            <p id="indoorDetail">Indoor · Braker location</p>
-          </div>
-        </article>
-      </div>
-
-      <div class="plan-status" id="status" data-state="watching">
-        <span class="status-dot" aria-hidden="true"></span>
-        <div>
-          <h3 id="statusTitle">Checking the booking</h3>
-          <p id="statusNote">Loading the backup venue status…</p>
+            <div class="muted" id="indoorDetail">Indoor · Braker location</div>
+          </article>
         </div>
+
+        <div class="card status-card" id="status">
+          <div class="status-line" role="status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <div class="card-title" id="statusTitle">Watching the forecast</div>
+              <p class="card-body" id="statusNote">Play is planned at Whitaker Courts.</p>
+            </div>
+          </div>
+          <div class="booking-actions" id="bookingControls" hidden>
+            <button type="button" class="btn btn-primary" id="confirm">Confirm booking · 750 USDC</button>
+            <button type="button" class="btn btn-secondary" id="expire">Let the hold expire</button>
+          </div>
+          <div id="scenarioReset" hidden><button type="button" class="btn btn-secondary" id="resetExample">Reset simulated booking</button></div>
+        </div>
+      </section>
+    </div>
+
+    <p id="requestMessage" class="section-note request-message" role="status" hidden></p>
+
+    <section class="ruled-section split-section" id="organizerEscrow" aria-label="Escrow and booking activity">
+      <div>
+        <h2 class="section-heading">Escrow</h2>
+        <p class="section-note muted escrow-note" id="escrowIntro">900 USDC in the illustrative booking.</p>
+        <div class="escrow-meter" aria-hidden="true"><div id="holdMeter"></div><div id="balanceMeter"></div></div>
+        <table class="table escrow-table">
+          <thead><tr><th scope="col">Part</th><th scope="col">Amount</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            <tr><td>Hold fee</td><td id="holdFee">150 USDC</td><td><span class="tag tag-neutral" id="holdState">In escrow</span></td></tr>
+            <tr><td>Remaining balance</td><td id="balance">750 USDC</td><td><span class="tag tag-neutral" id="balanceState">In escrow</span></td></tr>
+          </tbody>
+        </table>
+        <p class="section-note muted escrow-cutoff" id="cutoff" hidden></p>
       </div>
-      <div class="booking-actions" id="bookingControls" hidden>
-        <button type="button" class="primary" id="confirm">Confirm booking</button>
-        <button type="button" class="secondary" id="expire">Simulate expiry</button>
+      <div>
+        <h2 class="detail-heading">Booking activity</h2>
+        <ol class="activity" id="activity"><li><span class="activity-number">01</span><span>Illustrative escrow funded with 900 USDC.</span></li></ol>
       </div>
     </section>
-  </div>
 
-  <p id="requestMessage" class="request-message" role="status" hidden></p>
+    <section class="panel staff-panel" id="staffPanel" hidden>
+      <div>
+        <h2 class="section-heading">Test booking request</h2>
+        <p class="section-note muted" id="staffIntro">Check whether the escrow demo needs the room.</p>
+      </div>
+      <div class="staff-grid">
+        <div class="plate staff-photo" aria-hidden="true"></div>
+        <div class="staff-copy">
+          <div>
+            <div class="card-kicker">Indoor backup</div>
+            <h3>Austin Pickle Ranch</h3>
+            <div class="section-note muted">Indoor · Braker location</div>
+          </div>
+          <div class="card status-card" id="staffStatus">
+            <div class="status-line" role="status">
+              <span class="status-dot" aria-hidden="true"></span>
+              <div>
+                <div class="card-title" id="staffTitle">Checking the booking</div>
+                <p class="card-body" id="staffNote">Loading the backup venue status…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table class="table staff-table">
+        <thead><tr><th scope="col">Booking details</th><th scope="col">Amount</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          <tr><td>Hold fee</td><td id="staffHoldFee">—</td><td><span class="tag tag-neutral" id="staffHoldState">Waiting</span></td></tr>
+          <tr><td>Remaining balance</td><td id="staffBalance">—</td><td><span class="tag tag-neutral" id="staffBalanceState">Waiting</span></td></tr>
+        </tbody>
+      </table>
+    </section>
 
-  <section class="preview" id="preview" aria-labelledby="previewHeading">
-    <div>
-      <h2 id="previewHeading">Rehearse a rainy day</h2>
-      <p>Walk through a backup hold and venue switch with an illustrative forecast.</p>
-    </div>
-    <button type="button" class="primary" id="previewButton" aria-controls="previewResult" aria-expanded="false" disabled>Try rain scenario <span aria-hidden="true">↗</span></button>
-    <div class="preview-result" id="previewResult" hidden>
-      <div class="preview-reading"><strong id="previewValue"></strong><span>Illustrative forecast</span></div>
-      <div><p id="previewExplanation" aria-live="polite"></p><button type="button" class="secondary" id="previewAdvance" hidden></button></div>
-    </div>
-  </section>
+    <section class="ruled-section" id="howItWorks">
+      <h2 class="how-heading">How it works</h2>
+      <div class="how-grid">
+        <div>
+          <span class="how-number">1</span>
+          <h3>Forecast</h3>
+          <p>Umbrella uses the National Weather Service hourly forecast. An incomplete or stale forecast pauses automatic payments.</p>
+        </div>
+        <div>
+          <span class="how-number">2</span>
+          <h3>Escrow</h3>
+          <p>In the example, 900 USDC funds the backup. A one-time hold pays 150 to the fixed recipient before the cutoff. Confirming pays the remaining 750. Expiry returns any unpaid funds to the organizer.</p>
+        </div>
+        <div>
+          <span class="how-number">3</span>
+          <h3>Confirmation</h3>
+          <p>QuickNode Streams filters Arc Testnet Logs for the escrow’s HoldPaid event. Umbrella verifies the signed webhook and finalized Arc receipt before showing Room held.</p>
+        </div>
+      </div>
+    </section>
 
-  <section class="integration" id="integration" aria-labelledby="integrationTitle" hidden>
-    <div><h2 id="integrationTitle">Onchain demo</h2><p>Separate test booking for the escrow flow.</p></div>
-    <div class="proof"><strong id="arcStatus">Arc Testnet</strong><a id="payoutLink" target="_blank" rel="noopener" hidden>View payout <span aria-hidden="true">↗</span></a></div>
-    <div class="proof"><strong>QuickNode Streams</strong><p id="streamStatus"></p></div>
-    <a class="integration-link" href="/?view=escrow">Open escrow demo <span aria-hidden="true">↗</span></a>
-  </section>
-
-  <section class="details-list" id="bookingDetails" aria-label="Booking details and demo controls">
-    <details class="detail-panel" id="termsPanel">
-      <summary>Booking details</summary>
-      <dl class="terms"><div><dt>Hold fee</dt><dd id="holdFee">0.15 test USDC</dd></div><div><dt>Remaining balance</dt><dd id="balance">0.75 test USDC</dd></div><div><dt>Hold deadline</dt><dd id="terms">Loading…</dd></div></dl>
-    </details>
-    <details class="detail-panel" id="activityPanel">
-      <summary>Booking activity</summary>
-      <ol id="activity"></ol>
-    </details>
-    <details class="detail-panel" id="demoPanel">
+    <details class="ruled-section demo-panel" id="demoPanel" hidden>
       <summary>Hackathon demo controls</summary>
-      <p id="mode" class="demo-mode">Simulation</p>
-      <p id="replayNote"></p>
+      <p class="section-note" id="mode"></p>
+      <p class="section-note muted" id="replayNote"></p>
       <div class="booking-actions">
-        <button type="button" class="secondary" id="replay">Run simulated replay</button>
-        <button type="button" class="secondary" id="reset">Reset simulated booking</button>
-        <button type="button" class="secondary" id="armReplay">Arm Arc testnet replay</button>
-        <button type="button" class="secondary" id="armLive">Arm live forecast payments</button>
-        <button type="button" class="secondary" id="disarm">Disarm Arc payments</button>
+        <button type="button" class="btn btn-secondary" id="replay">Run simulated replay</button>
+        <button type="button" class="btn btn-secondary" id="reset">Reset simulated booking</button>
+        <button type="button" class="btn btn-secondary" id="armReplay">Arm Arc Testnet replay</button>
+        <button type="button" class="btn btn-secondary" id="armLive">Arm live forecast payments</button>
+        <button type="button" class="btn btn-secondary" id="disarm">Disarm Arc payments</button>
       </div>
     </details>
-  </section>
-  <footer class="view-footer" id="venueFooter">
-    <a href="/?view=venue">Open demo venue’s staff view <span aria-hidden="true">↗</span></a>
-    <p>For staff to see when to hold the test venue.</p>
-  </footer>
-</main>
+
+    <section class="ruled-section" aria-labelledby="proofHeading">
+      <h2 class="detail-heading" id="proofHeading">Verified on testnet</h2>
+      <table class="table proof-table">
+        <tbody>
+          <tr>
+            <th scope="row">Arc escrow</th>
+            <td class="proof-address">0x5da4E93bB8B36ff909B57B038F94Bb7dE9964097</td>
+            <td><a href="https://explorer.testnet.arc.io/tx/0xd1682bd673f2bb18e17e660400cbbc4a2637dbf1936595d0fce0f8f8baa2285f" target="_blank" rel="noopener">Finalized hold payout</a></td>
+          </tr>
+          <tr>
+            <th scope="row">QuickNode Streams</th>
+            <td colspan="2">A signed dashboard test forwarded that 0.15 test USDC payout event and switched Umbrella to Room held.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="page-note muted">The hold fee compensates the venue for setting space aside. Real use relies on an authorized signer, forecast accuracy, and prior agreement with the venue. The venue switch is simulated.</p>
+    </section>
+  </main>
+</div>
 </body>
 </html>

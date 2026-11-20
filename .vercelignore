@@ -1,0 +1,10 @@
+.env
+.env.*
+.vercel
+node_modules
+*.sqlite
+*.sqlite-*
+.standby
+artifacts
+public
+.DS_Store

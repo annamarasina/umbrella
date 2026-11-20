@@ -2,7 +2,8 @@ const find = (id) => document.getElementById(id);
 const view = new URLSearchParams(location.search).get('view');
 const staffView = view === 'venue';
 const exampleView = !staffView && view !== 'escrow';
-const statePath = exampleView ? '/api/event' : '/api/state';
+const hosted = Boolean(document.querySelector('meta[name="umbrella-hosted"]'));
+const statePath = exampleView ? '/api/event' : hosted ? '/testnet-demo.json' : '/api/state';
 const austinDate = new Intl.DateTimeFormat('en-US', {
   weekday: 'long', month: 'short', day: 'numeric', timeZone: 'America/Chicago',
 });
@@ -11,44 +12,21 @@ const austinTime = new Intl.DateTimeFormat('en-US', {
 });
 const checkTime = new Intl.DateTimeFormat('en-US', { timeStyle: 'medium', timeZone: 'America/Chicago' });
 const hourLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', timeZone: 'America/Chicago' });
+
+const scenarioRain = [52, 78, 71, 58];
+const exampleAmounts = { holdFee: 150, balance: 750 };
+const stepIndex = { watching: 0, pending: 1, held: 2, confirmed: 3, expired: 3, closed: 3, failed: 1 };
 let state;
 let runningAction;
 let forecastInitialized = false;
-let previewOpen = false;
-let previewStep = 0;
+let rainScenario = false;
+let scenarioPhase = 'watching';
+let holdTimer;
+let chartSlots = [];
 
-function displayBookingStatus() {
-  const { phase, mode, cutoffPassed, paymentReceiptSeen, paymentUncertain, settling, settlementAmount } = state;
-  const simulation = mode === 'simulation';
-  if (settling) return ['Settlement pending', 'Waiting for confirmation of your transaction.'];
-  switch (phase) {
-    case 'watching':
-      if (cutoffPassed) return ['Backup offer closed', 'The test booking deadline has passed.'];
-      if (staffView) return ['Waiting for a hold', 'Hold the test venue once a verified booking comes through.'];
-      return ['Escrow ready for the demo', 'The testnet hold is triggered through the demo controls.'];
-    case 'pending':
-      if (simulation) return ['Demo hold in progress', 'Waiting for the simulated reservation.'];
-      if (paymentReceiptSeen) return ['Hold fee paid', staffView ? 'The testnet payment cleared. The room hold is awaiting a verified booking update.' :
-        'The testnet payment cleared. The hold updates when its signed QuickNode event arrives.'];
-      if (paymentUncertain) return ['Hold payment awaiting verification', 'Check booking activity for the latest status.'];
-      return ['Hold requested', 'Waiting for the hold payment to clear.'];
-    case 'held':
-      if (cutoffPassed) return ['Hold deadline passed', 'The unpaid balance can be refunded.'];
-      return ['Room held', staffView ? (simulation ? 'Demo only. An organizer would now decide whether to book.' :
-        'Keep the test venue available until the hold deadline.') :
-        (simulation ? 'Confirm the simulated switch to the indoor venue.' :
-          'The test venue is held. Confirm to release the remaining testnet balance.')];
-    case 'confirmed':
-      return ['Test booking confirmed', simulation ? 'The venue switch was simulated.' :
-        'The remaining balance settled on Arc Testnet.'];
-    case 'expired':
-      return ['Backup hold expired', simulation ? 'The refund was simulated.' :
-        `${settlementAmount} test USDC went back to the organizer.`];
-    case 'closed':
-      return ['Backup offer closed', 'The deadline passed before the hold completed.'];
-    case 'failed':
-      return ['Hold payment failed', 'See booking activity for the failed transaction.'];
-  }
+function setText(id, text) {
+  const element = find(id);
+  if (element.textContent !== text) element.textContent = text;
 }
 
 function formatWindow(booking) {
@@ -64,38 +42,263 @@ function highestRain(hours) {
     ? Math.max(...hours.map(({ probability }) => probability)) : null;
 }
 
-function renderWeather(forecast, lastFresh, threshold) {
+function prepareWeatherArt() {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i < 12; i++) {
+    const ray = document.createElementNS(svgNS, 'path');
+    ray.setAttribute('d', i % 2 ? 'M24 9.5v-3' : 'M24 9.5v-6.5');
+    ray.setAttribute('transform', `rotate(${i * 30} 24 24)`);
+    ray.style.setProperty('--delay', `${i * 0.2}s`);
+    find('sunRays').append(ray);
+  }
+  const rain = document.createDocumentFragment();
+  const spread = (index, multiplier) => ((index * multiplier) % 97) / 97;
+  for (let i = 0; i < 70; i++) {
+    const drop = document.createElement('span');
+    drop.style.left = `${spread(i, 37) * 108 - 2}%`;
+    drop.style.height = `${18 + spread(i, 53) * 26}px`;
+    drop.style.setProperty('--duration', `${0.9 + spread(i, 71) * 0.9}s`);
+    drop.style.setProperty('--delay', `${-spread(i, 29) * 2}s`);
+    rain.append(drop);
+  }
+  find('rainSky').append(rain);
+}
+
+function renderChart(hours, threshold) {
+  if (hours.length !== chartSlots.length) {
+    chartSlots = hours.map(() => {
+      const bar = document.createElement('div');
+      bar.className = 'chart-bar';
+      const value = document.createElement('span');
+      bar.append(value);
+      const hour = document.createElement('time');
+      return { bar, value, hour };
+    });
+    find('chartBars').replaceChildren(...chartSlots.map(({ bar }) => bar));
+    find('chartHours').replaceChildren(...chartSlots.map(({ hour }) => hour));
+    find('rainChart').style.setProperty('--hour-count', hours.length);
+    find('chartHours').style.setProperty('--hour-count', hours.length);
+  }
+  find('rainChart').style.setProperty('--threshold', `${threshold}%`);
+  setText('chartThreshold', `Switch point ${threshold}%`);
+  hours.forEach(({ start, probability }, index) => {
+    const { bar, value, hour } = chartSlots[index];
+    const known = Number.isFinite(probability);
+    const label = hourLabel.format(new Date(start));
+    bar.style.setProperty('--chance', `${probability ?? 0}%`);
+    bar.toggleAttribute('data-crossed', known && probability >= threshold);
+    bar.toggleAttribute('data-missing', !known);
+    value.textContent = known ? `${probability}%` : '—';
+    hour.dateTime = start;
+    hour.textContent = label;
+    hour.setAttribute('aria-label', `${label}, ${known ? `${probability}% chance of rain` : 'rain chance unavailable'}`);
+  });
+}
+
+function renderWeather() {
+  const { forecast, lastFreshForecast, booking } = state;
+  const { threshold } = booking;
   const latest = forecast.status === 'fresh';
-  const reading = latest || (forecast.status === 'stale' && highestRain(forecast.hours) !== null)
-    ? forecast : lastFresh;
-  const peak = reading ? highestRain(reading.hours) : null;
-  const thresholdReached = latest && peak !== null && peak >= threshold;
-  const flag = {
+  const illustrative = exampleView && rainScenario;
+  const recorded = hosted && !exampleView;
+  const saved = forecast.status === 'stale' && highestRain(forecast.hours) !== null ? forecast : lastFreshForecast;
+  const reading = latest ? forecast : saved;
+  const hours = illustrative ? forecast.hours.map((hour, i) => ({ ...hour, probability: scenarioRain[i] })) :
+    (reading?.hours ?? forecast.hours);
+  const peak = highestRain(hours);
+  const crosses = (illustrative || latest || recorded) && peak !== null && peak >= threshold;
+  const comparison = crosses ? 'At or above' : 'Below';
+  const flags = {
     unchecked: 'Waiting for the live forecast',
     unavailable: 'Live forecast unavailable',
     stale: 'Live forecast out of date',
     incomplete: 'Some event hours are missing',
-    fresh: thresholdReached ? `At or above the ${threshold}% switch point` : `Below the ${threshold}% switch point`,
-  }[forecast.status];
-  find('rainValue').textContent = peak === null ? '—' : `${peak}%`;
-  find('rainDecision').textContent = flag;
-  find('forecastCard').dataset.level = latest ? (thresholdReached ? 'above' : 'below') : 'unknown';
-  const updated = reading?.updatedAt && Number.isFinite(Date.parse(reading.updatedAt))
-    ? ` · ${austinDate.format(new Date(reading.updatedAt))}, ${austinTime.format(new Date(reading.updatedAt))}` : '';
-  find('forecastSource').textContent = latest ? `Live NWS forecast · checked at ${checkTime.format(new Date(forecast.checkedAt))}`
-    : peak === null ? 'National Weather Service' : `Last known NWS forecast${updated}`;
+  };
+  setText('rainValue', peak === null ? '—' : `${peak}%`);
+  setText('rainDecision', illustrative || latest || recorded ? `${comparison} the ${threshold}% switch point` : flags[forecast.status]);
+  find('rainDecision').className = crosses ? 'tag tag-accent' : 'tag tag-neutral';
+  find('sunIcon').toggleAttribute('hidden', crosses);
+  find('rainIcon').toggleAttribute('hidden', !crosses);
+  find('sunSky').hidden = crosses;
+  find('rainSky').hidden = !crosses;
 
-  const hours = reading?.hours ?? forecast.hours;
-  find('hourlyValues').replaceChildren(...hours.map(({ start, probability }) => {
-    const row = document.createElement('li');
-    const hour = document.createElement('time');
-    hour.dateTime = start;
-    hour.textContent = hourLabel.format(new Date(start));
-    const chance = document.createElement('strong');
-    chance.textContent = probability === null ? 'Unavailable' : `${probability}%`;
-    row.append(hour, chance);
-    return row;
+  const checked = reading?.checkedAt ? checkTime.format(new Date(reading.checkedAt)) : '';
+  let source = 'National Weather Service · hourly forecast';
+  if (illustrative) source = 'Illustrative forecast · no payment is sent';
+  else if (recorded) source = 'Illustrative forecast · recorded Arc Testnet replay';
+  else if (latest) source = `Live NWS forecast · checked at ${checked}`;
+  else if (forecast.status !== 'unchecked') source = saved ?
+    'Last known NWS forecast · automatic payments paused' : 'National Weather Service · automatic payments paused';
+  setText('forecastSource', source);
+  const checking = runningAction === 'forecast';
+  find('forecast').disabled = Boolean(runningAction) || illustrative;
+  find('forecast').setAttribute('aria-busy', String(checking));
+  setText('forecastButtonLabel', checking ? 'Checking live forecast…' : 'Check live forecast');
+  renderChart(hours, threshold);
+}
+
+function renderSteps(phase, hold, balance, simulated) {
+  const index = stepIndex[phase] ?? 0;
+  const steps = document.querySelectorAll('.booking-steps li');
+  steps.forEach((step, i) => {
+    step.toggleAttribute('data-complete', i < index);
+    if (i === index) step.setAttribute('aria-current', 'step');
+    else step.removeAttribute('aria-current');
+  });
+  const expired = phase === 'expired';
+  setText('holdStep', `${hold} from escrow`);
+  setText('roomStep', simulated && phase !== 'watching' ? 'Simulated booking update' : 'Signed event verified');
+  setText('decisionStep', expired ? 'Hold expired' : 'Your decision');
+  setText('decisionNote', expired ? `${balance} returned` :
+    phase === 'confirmed' ? (simulated ? 'Moved indoors' : 'Booking confirmed') : 'Move or stay');
+}
+
+function renderActivity(activity) {
+  find('activity').replaceChildren(...activity.map(({ text, txUrl }, i) => {
+    const item = document.createElement('li');
+    const number = document.createElement('span');
+    number.className = 'activity-number';
+    number.textContent = String(i + 1).padStart(2, '0');
+    const description = document.createElement('span');
+    description.textContent = text;
+    if (txUrl) {
+      const link = document.createElement('a');
+      link.href = txUrl;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'View Arc Testnet transaction';
+      description.append(' ', link);
+    }
+    item.append(number, description);
+    return item;
   }));
+}
+
+function showStatus(id, title, note, paid) {
+  find(id).toggleAttribute('data-paid', paid);
+  if (id === 'staffStatus') {
+    setText('staffTitle', title);
+    setText('staffNote', note);
+  } else {
+    setText('statusTitle', title);
+    setText('statusNote', note);
+  }
+}
+
+function showTag(id, label, paid) {
+  setText(id, label);
+  find(id).className = paid ? 'tag tag-accent' : 'tag tag-neutral';
+}
+
+function renderAmounts(phase, hold, balance, paid, holdRetained) {
+  const holdState = paid ? 'Paid to venue' : phase === 'pending' ? 'Clearing' :
+    phase === 'expired' && !holdRetained ? 'Returned to organizer' : 'In escrow';
+  const balanceState = phase === 'confirmed' ? 'Paid to venue' :
+    phase === 'expired' ? 'Returned to organizer' : 'In escrow';
+  if (staffView) {
+    setText('staffHoldFee', hold);
+    setText('staffBalance', balance);
+    showTag('staffHoldState', holdState, paid);
+    showTag('staffBalanceState', balanceState, phase === 'confirmed');
+    return;
+  }
+  setText('holdFee', hold);
+  setText('balance', balance);
+  showTag('holdState', holdState, paid);
+  showTag('balanceState', balanceState, phase === 'confirmed');
+  find('holdMeter').dataset.state = paid ? 'paid' : phase === 'expired' && !holdRetained ? 'refunded' : '';
+  find('balanceMeter').dataset.state = phase === 'confirmed' ? 'paid' : phase === 'expired' ? 'refunded' : '';
+}
+
+function renderVenuePlan(moved) {
+  find('outdoorCard').dataset.current = String(!moved);
+  find('indoorCard').dataset.current = String(moved);
+  setText('outdoorRole', moved ? 'Original venue' : 'Current venue');
+  setText('indoorRole', moved ? 'Current venue' : 'Indoor backup');
+  setText('planIntro', moved ? 'Your indoor venue is confirmed.' :
+    'Reaching the switch point can reserve the backup. You decide whether to move.');
+}
+
+function renderExample() {
+  const { booking: { threshold }, event, forecast } = state;
+  const phase = scenarioPhase;
+  const held = phase === 'held';
+  const moved = phase === 'confirmed';
+  const expired = phase === 'expired';
+  const paid = held || moved || expired;
+  const hold = `${exampleAmounts.holdFee} USDC`;
+  const balance = `${exampleAmounts.balance} USDC`;
+  const livePeak = highestRain(forecast.hours);
+  const known = forecast.status === 'fresh' || rainScenario;
+  const peak = rainScenario ? Math.max(...scenarioRain) : livePeak;
+  let watching = `Play is planned at ${event.outdoor.name}. Automatic payments are paused.`;
+  if (known) watching = peak >= threshold ?
+    `At or above the ${threshold}% switch point. The indoor backup can be reserved in the rain scenario.` :
+    `Below the ${threshold}% switch point. Play stays at ${event.outdoor.name}.`;
+
+  const status = {
+    watching: ['Watching the forecast', watching],
+    pending: ['Hold requested', 'Waiting for the simulated hold payment to clear.'],
+    held: ['Room held', `In this scenario, play stays at ${event.outdoor.name} until you confirm the switch.`],
+    confirmed: ['Booking confirmed', `Play moves indoors to ${event.backup.name} in this scenario.`],
+    expired: ['Backup hold expired', `${balance} went back to the organizer in this scenario.`],
+  }[phase];
+
+  setText('heading', event.title);
+  find('rainMode').disabled = false;
+  setText('outdoorName', event.outdoor.name);
+  setText('outdoorDetail', event.outdoor.detail);
+  setText('indoorName', event.backup.name);
+  setText('indoorDetail', event.backup.detail);
+  renderVenuePlan(moved);
+  renderSteps(phase, hold, balance, true);
+  renderAmounts(phase, hold, balance, paid, paid);
+  showStatus('status', ...status, paid && !expired);
+  find('bookingControls').hidden = !held;
+  find('scenarioReset').hidden = !moved && !expired;
+
+  const activity = [{ text: 'Illustrative escrow funded with 900 USDC.' }];
+  if (phase !== 'watching') activity.push({ text: `Rain scenario reached ${Math.max(...scenarioRain)}%. Simulated hold requested.` });
+  if (paid) activity.push(
+    { text: `Hold fee of ${hold} paid in the simulation.` },
+    { text: 'Simulated booking update received. Room held.' },
+  );
+  if (moved) activity.push({ text: `Organizer confirmed. Remaining ${balance} released in the simulation.` });
+  if (expired) activity.push({ text: `Hold expired. ${balance} returned in the simulation.` });
+  renderActivity(activity);
+}
+
+function bookingStatus() {
+  const { phase, mode, cutoffPassed, paymentReceiptSeen, paymentUncertain, settling, settlementAmount } = state;
+  const simulation = mode === 'simulation';
+  if (settling) return ['Settlement pending', 'Waiting for confirmation of your transaction.'];
+  switch (phase) {
+    case 'watching':
+      if (cutoffPassed) return ['Backup offer closed', 'The test booking deadline has passed.'];
+      return staffView ? ['Waiting for a hold', 'Hold the test venue once a verified booking comes through.'] :
+        ['Escrow ready for the demo', 'Use the demo controls to trigger the hold.'];
+    case 'pending':
+      if (simulation) return ['Demo hold in progress', 'Waiting for the simulated reservation.'];
+      if (paymentReceiptSeen) return ['Hold fee paid', 'The testnet payment cleared. The room hold is awaiting a signed QuickNode event.'];
+      if (paymentUncertain) return ['Hold payment awaiting verification', 'Check booking activity for the latest status.'];
+      return ['Hold requested', 'Waiting for the hold payment to clear.'];
+    case 'held':
+      if (cutoffPassed) return ['Hold deadline passed', 'The unpaid balance can be refunded.'];
+      if (simulation) return ['Room held', 'Simulated booking. The organizer can decide whether to book.'];
+      if (hosted) return ['Room held', 'A signed QuickNode delivery matched the finalized Arc Testnet payout. This is the recorded test booking.'];
+      return ['Room held', staffView ? 'Keep the test venue available until the hold deadline.' :
+        'Confirm to release the remaining testnet balance.'];
+    case 'confirmed':
+      return ['Test booking confirmed', simulation ? 'The venue switch was simulated.' :
+        'The remaining balance settled on Arc Testnet.'];
+    case 'expired':
+      return ['Backup hold expired', simulation ? 'The refund was simulated.' :
+        `${settlementAmount} test USDC went back to the organizer.`];
+    case 'closed':
+      return ['Backup offer closed', 'The deadline passed before the hold completed.'];
+    case 'failed':
+      return ['Hold payment failed', 'See booking activity for the failed transaction.'];
+  }
 }
 
 function renderDemoControls() {
@@ -103,21 +306,20 @@ function renderDemoControls() {
   const simulation = mode === 'simulation';
   const canTrigger = phase === 'watching' && !cutoffPassed;
   const replayArmed = mode === 'arc-replay';
-  find('mode').textContent = {
+  setText('mode', {
     simulation: 'Simulation',
     'arc-live': 'Arc Testnet · live forecast',
     'arc-replay': 'Arc Testnet · illustrative replay',
-  }[mode];
-  find('replayNote').textContent = {
+  }[mode]);
+  setText('replayNote', {
     simulation: 'The demo replay creates a simulated hold you can reset.',
     'arc-live': automaticPaymentsEnabled ? 'Automatic testnet payments are enabled for fresh live forecasts.' :
-      'Automatic payments are paused until a fresh, complete live forecast is available.',
-    'arc-replay': phase === 'pending' && !streamReady ?
-      'The signed QuickNode backfill is needed to update the venue status.' :
+      'Automatic payments are paused when no fresh, complete forecast is available.',
+    'arc-replay': phase === 'pending' && !streamReady ? 'The signed QuickNode backfill is needed to update the venue status.' :
       'The armed replay uses illustrative values and can send a real testnet hold fee once.',
-  }[mode];
+  }[mode]);
   find('replay').hidden = !canTrigger || mode === 'arc-live';
-  find('replay').textContent = replayArmed ? 'Run replay and pay on Arc Testnet' : 'Run simulated replay';
+  setText('replay', replayArmed ? 'Run replay and pay on Arc Testnet' : 'Run simulated replay');
   find('reset').hidden = !simulation;
   find('armReplay').hidden = !canTrigger || !simulation || !arcReady;
   find('armLive').hidden = !canTrigger || !simulation || !arcReady || !streamReady;
@@ -127,128 +329,75 @@ function renderDemoControls() {
   }
 }
 
-function renderPreview() {
-  const { booking, event, previewPeak } = state;
-  const crosses = previewPeak >= booking.threshold;
-  find('previewButton').disabled = false;
-  find('previewButton').setAttribute('aria-expanded', String(previewOpen));
-  find('previewButton').firstChild.textContent = previewOpen ? 'Close rain scenario ' : 'Try rain scenario ';
-  find('previewResult').hidden = !previewOpen;
-  if (!previewOpen) return;
-  find('previewValue').textContent = `${previewPeak}%`;
-  const stories = [
-    `The forecast crossed the ${booking.threshold}% switch point. Umbrella would request a hold at ${event.backup.name}.`,
-    `Simulated hold placed. Play is still planned at ${event.outdoor.name} until you confirm the switch.`,
-    `Demo switch confirmed. In this rehearsal, play moves indoors to ${event.backup.name}.`,
-  ];
-  find('previewExplanation').textContent = crosses ? stories[previewStep] :
-    `At ${previewPeak}%, play stays at ${event.outdoor.name}. The backup hold starts at ${booking.threshold}%.`;
-  find('previewAdvance').hidden = !crosses || previewStep === 2;
-  find('previewAdvance').textContent = previewStep === 0 ? 'Simulate court hold' : 'Simulate venue switch';
-}
+function renderEscrow() {
+  const { booking, phase, mode, cutoffPassed, paymentReceiptSeen, settlementEnabled, settlementAmount } = state;
+  const simulation = mode === 'simulation';
+  const hold = `${booking.holdFee} test USDC`;
+  const balance = `${booking.balance} test USDC`;
+  const retained = phase === 'expired' && (simulation || Number(settlementAmount) === booking.balance);
+  const paid = paymentReceiptSeen || phase === 'held' || phase === 'confirmed' || retained;
+  renderSteps(phase, hold, balance, simulation);
+  renderAmounts(phase, hold, balance, paid, retained);
+  showStatus(staffView ? 'staffStatus' : 'status', ...bookingStatus(), paid && phase !== 'expired');
+  if (staffView) return;
 
-function renderActivity(activity) {
-  find('activity').replaceChildren(...activity.map(({ text, txUrl }) => {
-    const item = document.createElement('li');
-    item.textContent = text;
-    if (txUrl) {
-      const link = document.createElement('a');
-      link.href = txUrl;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.textContent = 'View Arc Testnet transaction';
-      item.append(' ', link);
-    }
-    return item;
-  }));
+  const windowLabel = formatWindow(booking);
+  setText('subtitle', hosted ? 'Verified payout from a separate test booking · ' + windowLabel : windowLabel);
+  renderVenuePlan(phase === 'confirmed');
+  setText('escrowIntro', simulation ? 'Simulated testnet booking.' : 'Test booking on Arc Testnet.');
+  const cutoff = new Date(booking.cutoff);
+  setText('cutoff', `Hold deadline · ${austinDate.format(cutoff)} at ${austinTime.format(cutoff)} Austin time`);
+  find('cutoff').hidden = false;
+  find('holdMeter').style.width = `${booking.holdFee / (booking.holdFee + booking.balance) * 100}%`;
+  renderActivity(state.activity);
+  if (hosted) return;
+
+  const canConfirm = phase === 'held' && (simulation || (settlementEnabled && !cutoffPassed));
+  const canExpire = (simulation && phase === 'held') ||
+    (settlementEnabled && cutoffPassed && ['watching', 'held'].includes(phase));
+  find('bookingControls').hidden = !canConfirm && !canExpire;
+  find('confirm').hidden = !canConfirm;
+  find('expire').hidden = !canExpire;
+  setText('confirm', simulation ? 'Simulate booking confirmation' : `Confirm booking · ${balance}`);
+  setText('expire', simulation ? 'Simulate expiry' : 'Refund unpaid balance');
+  renderDemoControls();
 }
 
 function render() {
   if (!state) return;
-  if (exampleView) {
-    renderExample();
-    return;
-  }
-  const { booking, phase, mode, forecast, lastFreshForecast, cutoffPassed } = state;
-  const simulation = mode === 'simulation';
-  const moved = phase === 'confirmed';
-  const [title, description] = displayBookingStatus();
-  const windowLabel = formatWindow(booking);
-  find('subtitle').textContent = windowLabel;
-  find('status').dataset.state = phase === 'watching' && cutoffPassed ? 'closed' : phase;
-  if (find('statusTitle').textContent !== title) find('statusTitle').textContent = title;
-  find('statusNote').textContent = description;
-  find('threshold').textContent = `${booking.threshold}%`;
-  find('planIntro').textContent = staffView ? 'Check whether the escrow demo needs the room.' :
-    moved ? 'Your indoor venue is confirmed.' : 'Reaching the switch point can reserve the backup. You decide whether to move.';
-  find('outdoorCard').dataset.current = String(!moved);
-  find('indoorCard').dataset.current = String(moved || staffView);
-  find('outdoorRole').textContent = moved ? 'Original venue' : 'Current venue';
-  find('indoorRole').textContent = moved ? 'Current venue' : 'Indoor backup';
-
-  const canConfirm = phase === 'held' && (simulation || (state.settlementEnabled && !cutoffPassed));
-  const canExpire = (simulation && phase === 'held') ||
-    (state.settlementEnabled && cutoffPassed && ['watching', 'held'].includes(phase));
-  find('bookingControls').hidden = staffView || (!canConfirm && !canExpire);
-  find('confirm').hidden = !canConfirm;
-  find('expire').hidden = !canExpire;
-  find('expire').textContent = simulation ? 'Simulate expiry' : 'Refund unpaid balance';
-  find('holdFee').textContent = `${booking.holdFee} test USDC`;
-  find('balance').textContent = `${booking.balance} test USDC`;
-  const cutoff = new Date(booking.cutoff);
-  find('terms').textContent = `${austinDate.format(cutoff)} at ${austinTime.format(cutoff)} Austin time`;
-  renderActivity(state.activity);
-
-  if (staffView) return;
-  const checking = runningAction === 'forecast';
-  find('forecast').disabled = Boolean(runningAction);
-  find('forecast').setAttribute('aria-busy', String(checking));
-  find('forecastButtonLabel').textContent = checking ? 'Checking live forecast…' : 'Check live forecast';
-  renderWeather(forecast, lastFreshForecast, booking.threshold);
-  renderDemoControls();
+  setText('threshold', `${state.booking.threshold}%`);
+  if (!staffView) renderWeather();
+  if (exampleView) renderExample();
+  else renderEscrow();
 }
 
-function renderExample() {
-  const { booking, event, forecast, lastFreshForecast, integration } = state;
-  const checking = runningAction === 'forecast';
-  find('heading').textContent = event.title;
-  find('subtitle').textContent = `${formatWindow(booking)} · ${event.partner}`;
-  find('eventSchedule').textContent = event.schedule;
-  find('eventLink').href = event.url;
-  find('outdoorName').textContent = event.outdoor.name;
-  find('outdoorDetail').textContent = event.outdoor.detail;
-  find('outdoorCard').dataset.current = 'true';
-  find('indoorName').textContent = event.backup.name;
-  find('indoorDetail').textContent = event.backup.detail;
-  find('threshold').textContent = `${booking.threshold}%`;
-  find('statusTitle').textContent = 'Suggested indoor backup';
-  find('statusNote').textContent = 'Demo plan · Court availability unverified';
-  find('forecast').disabled = checking;
-  find('forecast').setAttribute('aria-busy', String(checking));
-  find('forecastButtonLabel').textContent = checking ? 'Checking live forecast…' : 'Check live forecast';
-  renderWeather(forecast, lastFreshForecast, booking.threshold);
-  renderPreview();
-
-  find('integration').hidden = false;
-  find('arcStatus').textContent = integration.payoutUrl ? `Arc Testnet · ${integration.holdFee} USDC released` : 'Arc Testnet · Awaiting verification';
-  find('payoutLink').hidden = !integration.payoutUrl;
-  if (integration.payoutUrl) find('payoutLink').href = integration.payoutUrl;
-  find('streamStatus').textContent = {
-    delivered: 'Signed delivery verified', awaiting: 'Awaiting signed delivery', disconnected: 'Stream setup pending',
-  }[integration.stream];
+function selectForecast(rain) {
+  rainScenario = rain;
+  clearTimeout(holdTimer);
+  if (!rain && scenarioPhase === 'pending') scenarioPhase = 'watching';
+  if (rain && scenarioPhase === 'watching' && state && Math.max(...scenarioRain) >= state.booking.threshold) {
+    scenarioPhase = 'pending';
+    holdTimer = setTimeout(() => {
+      scenarioPhase = 'held';
+      render();
+    }, 1800);
+  }
+  render();
 }
 
 function accept(next) {
   if (!state || next.version > state.version || (next.version === state.version &&
-      (next.cutoffPassed !== state.cutoffPassed || next.forecast.status !== state.forecast.status ||
-        next.integration?.stream !== state.integration?.stream || next.integration?.payoutUrl !== state.integration?.payoutUrl))) {
+      (next.cutoffPassed !== state.cutoffPassed || next.forecast.status !== state.forecast.status))) {
+    if (hosted && exampleView && next.forecast.status !== 'fresh') {
+      next.lastFreshForecast = state?.forecast.status === 'fresh' ? state.forecast : state?.lastFreshForecast;
+    }
     state = next;
     render();
   }
 }
 
 function showMessage(message) {
-  find('requestMessage').textContent = message;
+  setText('requestMessage', message);
   find('requestMessage').hidden = !message;
 }
 
@@ -259,16 +408,17 @@ async function request(path, options) {
   return data;
 }
 
+const connectionError = 'Could not connect to Umbrella. Try again in a moment.';
 async function refresh() {
   try {
     accept(await request(statePath));
-    if (find('requestMessage').textContent === 'Could not connect to Umbrella. Try again in a moment.') showMessage('');
-    if (!staffView && !forecastInitialized) {
+    if (find('requestMessage').textContent === connectionError) showMessage('');
+    if (!hosted && !staffView && !forecastInitialized) {
       forecastInitialized = true;
       if (state.forecast.status !== 'fresh') void act('forecast');
     }
   } catch {
-    if (!runningAction) showMessage('Could not connect to Umbrella. Try again in a moment.');
+    if (!runningAction) showMessage(connectionError);
   }
 }
 
@@ -278,8 +428,8 @@ async function act(action) {
   showMessage('');
   render();
   try {
-    const path = exampleView ? '/api/event/forecast' : '/api/actions/' + action;
-    accept(await request(path, { method: 'POST' }));
+    const path = hosted ? '/api/event' : exampleView ? '/api/event/forecast' : '/api/actions/' + action;
+    accept(await request(path, { method: hosted ? 'GET' : 'POST', cache: 'no-cache' }));
   } catch (error) {
     showMessage(action === 'forecast' ? 'Could not refresh the live forecast. Try again in a moment.' : error.message);
   } finally {
@@ -288,46 +438,60 @@ async function act(action) {
   }
 }
 
-for (const [id, action] of Object.entries({
-  forecast: 'forecast', replay: 'replay', reset: 'reset', confirm: 'confirm', expire: 'expire', disarm: 'disarm',
-})) {
-  find(id).addEventListener('click', () => act(action));
-}
-find('armReplay').addEventListener('click', () => {
-  if (window.confirm('Arm the replay to send a real Arc Testnet hold fee?')) act('arm-replay');
-});
-find('armLive').addEventListener('click', () => {
-  if (window.confirm('Arm live weather payments on Arc Testnet? A fresh forecast at the switch point can send the hold fee.')) act('arm-live');
-});
-find('previewButton').addEventListener('click', () => {
-  if (!state) return;
-  previewOpen = !previewOpen;
-  previewStep = 0;
-  renderPreview();
-});
-find('previewAdvance').addEventListener('click', () => {
-  if (previewStep < 2) previewStep++;
-  renderPreview();
-});
-
-document.body.dataset.view = exampleView ? 'example' : staffView ? 'venue' : 'escrow';
+find('forecast').addEventListener('click', () => act('forecast'));
 if (exampleView) {
-  find('bookingDetails').hidden = true;
-  find('venueFooter').hidden = true;
+  find('liveMode').addEventListener('change', () => selectForecast(false));
+  find('rainMode').addEventListener('change', () => selectForecast(true));
+  find('confirm').addEventListener('click', () => {
+    if (scenarioPhase !== 'held') return;
+    scenarioPhase = 'confirmed';
+    render();
+  });
+  find('expire').addEventListener('click', () => {
+    if (scenarioPhase !== 'held') return;
+    scenarioPhase = 'expired';
+    render();
+  });
+  find('resetExample').addEventListener('click', () => {
+    scenarioPhase = 'watching';
+    find('liveMode').checked = true;
+    selectForecast(false);
+    find('liveMode').focus();
+  });
 } else {
-  document.title = `${staffView ? 'Venue staff' : 'Arc escrow demo'} · Umbrella`;
-  for (const id of ['eventSource', 'preview']) find(id).hidden = true;
-  find('organizerNav').hidden = false;
-  find('eyebrow').textContent = 'Arc Testnet · Escrow demo';
-  find('heading').textContent = staffView ? 'Venue staff' : 'Arc escrow demo';
-  find('outdoorName').textContent = 'Outdoor demo site';
-  find('outdoorDetail').textContent = 'Test booking';
-  find('indoorName').textContent = 'Indoor demo site';
-  find('indoorDetail').textContent = 'Test booking';
+  find('planNav').removeAttribute('aria-current');
+  find(staffView ? 'staffNav' : 'escrowNav').setAttribute('aria-current', 'page');
+  setText('eyebrow', 'Arc Testnet · Escrow demo');
+  const heading = staffView ? 'Venue staff' : hosted ? 'Arc Testnet proof' : 'Arc escrow demo';
+  setText('heading', heading);
+  document.title = `${heading} · Umbrella`;
   if (staffView) {
-    for (const id of ['forecastCard', 'outdoorCard', 'switchPoint', 'demoPanel', 'venueFooter']) find(id).hidden = true;
-    find('planHeading').textContent = 'Test booking request';
+    find('planColumns').hidden = true;
+    find('organizerEscrow').hidden = true;
+    find('howItWorks').hidden = true;
+    find('staffPanel').hidden = false;
+    if (hosted) setText('staffIntro', 'See the venue’s view of the verified test booking.');
+  } else {
+    find('forecastModes').hidden = true;
+    find('demoPanel').hidden = hosted;
+    find('forecast').hidden = hosted;
+    setText('subtitle', 'Loading test booking…');
+    setText('outdoorName', 'Outdoor demo site');
+    setText('outdoorDetail', 'Test booking');
+    setText('indoorName', 'Indoor demo site');
+    setText('indoorDetail', 'Test booking');
+    for (const action of ['replay', 'reset', 'confirm', 'expire', 'disarm']) {
+      find(action).addEventListener('click', () => act(action));
+    }
+    find('armReplay').addEventListener('click', () => {
+      if (window.confirm('Arm the replay to send a real Arc Testnet hold fee?')) act('arm-replay');
+    });
+    find('armLive').addEventListener('click', () => {
+      if (window.confirm('Arm live weather payments on Arc Testnet? A fresh forecast at the switch point can send the hold fee.')) act('arm-live');
+    });
   }
 }
+
+prepareWeatherArt();
 refresh();
-window.setInterval(refresh, 1250);
+if (!hosted) window.setInterval(refresh, 1250);

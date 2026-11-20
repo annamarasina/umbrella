@@ -2,6 +2,8 @@
 
 Umbrella helps outdoor event organizers reserve an indoor backup when rain becomes likely. The venue gets paid to set the space aside, and the organizer can decide whether to move closer to the event.
 
+[Try Umbrella](https://umbrella-opal.vercel.app/) and select **Rain scenario** to rehearse a hold and venue switch. [Arc Testnet proof](https://umbrella-opal.vercel.app/?view=escrow) shows the separate verified test booking and its payout.
+
 ## Why I built it
 
 The [UBC Pickleball Cup](https://luma.com/jcvyakxc) made the problem concrete for me. The tournament was scheduled outdoors at **Whitaker Courts** in Austin. If rain looked likely that evening, how would an organizer find enough indoor courts in time? Paying for the full backup in advance could leave them paying for courts they never used. Waiting could mean the courts were taken. I wanted the organizer to be able to reserve the option early and make the final call closer to play.

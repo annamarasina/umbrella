@@ -13,6 +13,8 @@ const assets = new Map([
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/assets/pickleball-courts.jpg', ['assets/pickleball-courts.jpg', 'image/jpeg']],
+  ['/assets/fonts/cormorant-garamond.woff2', ['assets/fonts/cormorant-garamond.woff2', 'font/woff2']],
+  ['/assets/fonts/lora.woff2', ['assets/fonts/lora.woff2', 'font/woff2']],
 ]);
 const WEBHOOK = '/webhooks/quicknode';
 const POLL_INTERVAL = 5 * 60_000;
