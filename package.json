@@ -1,0 +1,22 @@
+{
+  "name": "umbrella-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env.local --env-file-if-exists=.env.arc server.mjs",
+    "test": "node --test",
+    "compile": "node scripts/compile.mjs",
+    "wallets": "node --env-file-if-exists=.env.local scripts/wallets.mjs",
+    "deploy": "node --env-file=.env.local --env-file-if-exists=.env.arc scripts/deploy.mjs",
+    "fund": "node --env-file=.env.local --env-file=.env.arc scripts/fund.mjs",
+    "stream": "node --env-file=.env.local scripts/quicknode.mjs",
+    "verify-hold": "node --env-file=.env.local --env-file=.env.arc scripts/verify-hold.mjs"
+  },
+  "dependencies": {
+    "ethers": "6.17.0"
+  },
+  "devDependencies": {
+    "ganache": "7.9.2",
+    "solc": "0.8.39"
+  }
+}
